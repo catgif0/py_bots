@@ -16,7 +16,7 @@ if not TELEGRAM_BOT_TOKEN:
     logging.error("TELEGRAM_BOT_TOKEN environment variable not set")
     raise ValueError("TELEGRAM_BOT_TOKEN environment variable not set")
 
-# Symbols to monitor (You can add more symbols here)
+# Symbols to monitor
 SYMBOLS = ["BTCUSDT", "ETHUSDT"]
 
 # Price and volume history to track changes over time intervals
@@ -223,8 +223,6 @@ def generate_signal(symbol, current_price, oi_changes, price_changes, volume_cha
         logging.info(f"No signal generated for {symbol}. Monitoring OI, price, and volume changes.")
         return None
 
-
-
 # Function to monitor pairs and check for signal generation
 def monitor_pairs():
     for symbol in SYMBOLS:
@@ -236,6 +234,11 @@ def monitor_pairs():
         
         price_data = get_price_data(symbol)
         current_price = price_data.get("price", None)
+        
+        # Append current price and volume to history
+        price_history[symbol].append(current_price)
+        
+        # Ensure enough historical data is present in deque before calculating changes
         price_change_1m = ((current_price - price_history[symbol][-2]) / price_history[symbol][-2]) * 100 if len(price_history[symbol]) >= 2 else None
         price_change_5m = ((current_price - price_history[symbol][-5]) / price_history[symbol][-5]) * 100 if len(price_history[symbol]) >= 5 else None
         price_change_15m = ((current_price - price_history[symbol][-15]) / price_history[symbol][-15]) * 100 if len(price_history[symbol]) >= 15 else None
