@@ -6,8 +6,6 @@ from collections import deque
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from threading import Thread
-from datetime import datetime, timedelta
-import schedule
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -18,13 +16,18 @@ if not TELEGRAM_BOT_TOKEN:
     logging.error("TELEGRAM_BOT_TOKEN environment variable not set")
     raise ValueError("TELEGRAM_BOT_TOKEN environment variable not set")
 
-# Symbols to monitor (initial empty list)
-SYMBOLS = []
-VALID_SYMBOLS = set()
+
+# Symbols to monitor
+SYMBOLS = ['HFTUSDT', 'XVSUSDT', 'LSKUSDT', 'ONGUSDT', 'BNTUSDT', 'BTCDOMUSDT', 'MTLUSDT', 'ORBSUSDT', 'ARKUSDT', 'TIAUSDC', 'ICXUSDT', 'ONEUSDT', 'AGLDUSDT', 'TWTUSDT']
+
 
 # Price and volume history to track changes over time intervals
-price_history = {}
-volume_history = {}
+price_history = {
+    symbol: deque(maxlen=60) for symbol in SYMBOLS  # Store up to 60 prices (one price per minute)
+}
+volume_history = {
+    symbol: deque(maxlen=60) for symbol in SYMBOLS  # Store up to 60 volume data points (one volume per minute)
+}
 
 # Initialize FastAPI app
 app = FastAPI()
@@ -85,60 +88,14 @@ def get_chat_ids():
         logging.error(f"Failed to get chat IDs: {e}")
         return []
 
-# Fetch valid symbols from Binance and store them
-def fetch_valid_symbols():
-    global VALID_SYMBOLS
-    try:
-        logging.info("Fetching valid trading symbols from Binance...")
-        url = "https://api.binance.com/api/v3/ticker/24hr"
-        response = requests.get(url)
-        if response.status_code != 200:
-            logging.error(f"Failed to fetch valid symbols: {response.status_code}, {response.text}")
-            return
-        data = response.json()
-        VALID_SYMBOLS = {item['symbol'] for item in data}
-        logging.info(f"Valid symbols fetched: {len(VALID_SYMBOLS)} symbols.")
-    except Exception as e:
-        logging.error(f"Error fetching valid symbols: {e}")
-
-# Fetch dynamic symbols based on volume < 1 million USDT in the last 24 hours
-def update_symbols():
-    try:
-        logging.info("Fetching dynamic symbols with volume less than 1M USDT...")
-        url = "https://api.binance.com/api/v3/ticker/24hr"
-        response = requests.get(url)
-        if response.status_code != 200:
-            logging.error(f"Failed to fetch symbols: {response.status_code}, {response.text}")
-            return
-        data = response.json()
-        
-        global SYMBOLS
-        SYMBOLS = [
-            item['symbol'] for item in data
-            if item['symbol'].endswith("USDT") and float(item['quoteVolume']) < 1_000_000 and item['symbol'] in VALID_SYMBOLS
-        ]
-        
-        logging.info(f"Symbols updated: {SYMBOLS}")
-        
-        # Re-initialize price and volume history for the new symbols
-        global price_history, volume_history
-        price_history = {symbol: deque(maxlen=60) for symbol in SYMBOLS}
-        volume_history = {symbol: deque(maxlen=60) for symbol in SYMBOLS}
-        
-    except Exception as e:
-        logging.error(f"Failed to update symbols: {e}")
-
-# Function to fetch open interest change for the symbol
+# Fetch open interest change for the symbol
 def get_open_interest_change(symbol, interval):
     try:
-        if symbol not in VALID_SYMBOLS:
-            logging.warning(f"Skipping invalid symbol: {symbol}")
-            return None
         url = "https://fapi.binance.com/futures/data/openInterestHist"
         params = {
             "symbol": symbol,
             "period": interval,
-            "limit": 2
+            "limit": 2  # We need the last two data points to calculate the change
         }
         response = requests.get(url, params=params)
         if response.status_code != 200:
@@ -153,12 +110,9 @@ def get_open_interest_change(symbol, interval):
         logging.error(f"Failed to fetch open interest change: {e}")
         return None
 
-# Fetch price data for the symbol
+# Fetch latest price and price change percentage for the symbol
 def get_price_data(symbol):
     try:
-        if symbol not in VALID_SYMBOLS:
-            logging.warning(f"Skipping invalid symbol: {symbol}")
-            return {}
         url = "https://fapi.binance.com/fapi/v1/ticker/24hr"
         params = {"symbol": symbol}
         response = requests.get(url, params=params)
@@ -166,8 +120,8 @@ def get_price_data(symbol):
             logging.error(f"Failed to fetch price data: {response.status_code}, {response.text}")
             return {}
         data = response.json()
-        price = float(data['lastPrice'])  # Current price
-        price_change_24h = float(data['priceChangePercent'])  # 24-hour price change
+        price = float(data['lastPrice'])  # Fetch the current price
+        price_change_24h = float(data['priceChangePercent'])  # 24-hour price change percentage
         return {
             "price": price,
             "price_change_24h": price_change_24h
@@ -176,12 +130,9 @@ def get_price_data(symbol):
         logging.error(f"Failed to fetch price data: {e}")
         return {}
 
-# Fetch volume data
+# Fetch 24-hour volume
 def get_volume(symbol):
     try:
-        if symbol not in VALID_SYMBOLS:
-            logging.warning(f"Skipping invalid symbol: {symbol}")
-            return "N/A"
         url = "https://fapi.binance.com/fapi/v1/ticker/24hr"
         params = {"symbol": symbol}
         response = requests.get(url, params=params)
@@ -189,17 +140,95 @@ def get_volume(symbol):
             logging.error(f"Failed to fetch volume: {response.status_code}, {response.text}")
             return "N/A"
         data = response.json()
-        volume = float(data['volume'])
+        volume = float(data['volume'])  # Current cumulative volume for the last 24 hours
         return volume
     except Exception as e:
         logging.error(f"Failed to fetch volume: {e}")
         return "N/A"
 
-# Signal generation logic here...
+# Function to fetch the latest funding rate
+def get_funding_rate(symbol):
+    try:
+        url = "https://fapi.binance.com/fapi/v1/fundingRate"
+        params = {
+            "symbol": symbol,
+            "limit": 1
+        }
+        response = requests.get(url, params=params)
+        if response.status_code != 200:
+            logging.error(f"Failed to fetch funding rate: {response.status_code}, {response.text}")
+            return "N/A"
+        data = response.json()
+        if len(data) > 0:
+            funding_rate = float(data[0]["fundingRate"]) * 100
+            return f"{funding_rate:.2f}%"
+        return "N/A"
+    except Exception as e:
+        logging.error(f"Failed to fetch funding rate: {e}")
+        return "N/A"
 
-# Function to monitor pairs and generate signals
+# Calculate change percentage with emojis
+def calculate_change_with_emoji(change_value):
+    if change_value is None:
+        return "N/A"
+    if change_value > 0:
+        return f"🟩{change_value:.3f}%"
+    elif change_value < 0:
+        return f"🟥{change_value:.3f}%"
+    else:
+        return "⬜0.000%"
+
+def generate_signal(symbol, current_price, oi_changes, price_changes, volume_changes):
+    # Log the fetched changes for debugging purposes
+    logging.debug(f"OI Changes for {symbol}: {oi_changes}")
+    logging.debug(f"Price Changes for {symbol}: {price_changes}")
+    logging.debug(f"Volume Changes for {symbol}: {volume_changes}")
+    
+    # Conditions for generating the signal
+    oi_condition = (
+        all(change is not None and change < 0 for change in oi_changes.values())
+        and oi_changes.get("5m") is not None and oi_changes["5m"] > 1.5
+    )
+    
+    price_condition_1 = (
+        all(change is not None and change < 0 for change in price_changes.values())
+        and price_changes.get("5m") is not None and price_changes["5m"] > 1.3
+    )
+    
+    volume_condition = (
+        all(change is not None and change < 0 for change in volume_changes.values())
+        and volume_changes.get("5m") is not None and volume_changes["5m"] > 12
+    )
+    
+    # Generate signal if any of the conditions are met
+    if oi_condition and (price_condition_1 or volume_condition):
+        # Stop Loss (SL) calculation: set to a configurable percentage below current price
+        stop_loss = current_price * 0.98  # 2% below the current price
+        
+        # Take Profit (TP) calculation: based on a 1:2 reward ratio
+        risk = current_price - stop_loss
+        take_profit = current_price + (2 * risk)
+        
+        # Trading signal message
+        signal_message = (
+            f"NEW LONG SIGNAL generated!\n\n"
+            f"PAIR: {symbol}\n"
+            f"Price: ${current_price:.2f}\n\n"
+            f"Stop Loss: ${stop_loss:.2f}\n\n"
+            f"TP1: ${take_profit:.2f}\n"
+            f"TP2: ${take_profit:.2f}\n"
+            f"TP3: ${take_profit:.2f}\n"
+        )
+        
+        return signal_message
+    else:
+        logging.info(f"No signal generated for {symbol}. Monitoring OI, price, and volume changes.")
+        return None
+
+# Function to monitor pairs and check for signal generation
 def monitor_pairs():
     for symbol in SYMBOLS:
+        # Fetch OI changes and price changes from your existing logic
         oi_5m = get_open_interest_change(symbol, '5m')
         oi_15m = get_open_interest_change(symbol, '15m')
         oi_1h = get_open_interest_change(symbol, '1h')
@@ -208,14 +237,17 @@ def monitor_pairs():
         price_data = get_price_data(symbol)
         current_price = price_data.get("price", None)
         
+        # Append current price and volume to history
         price_history[symbol].append(current_price)
         
+        # Ensure enough historical data is present in deque before calculating changes
         price_change_1m = ((current_price - price_history[symbol][-2]) / price_history[symbol][-2]) * 100 if len(price_history[symbol]) >= 2 else None
         price_change_5m = ((current_price - price_history[symbol][-5]) / price_history[symbol][-5]) * 100 if len(price_history[symbol]) >= 5 else None
         price_change_15m = ((current_price - price_history[symbol][-15]) / price_history[symbol][-15]) * 100 if len(price_history[symbol]) >= 15 else None
         price_change_1h = ((current_price - price_history[symbol][-60]) / price_history[symbol][-60]) * 100 if len(price_history[symbol]) >= 60 else None
         price_change_24h = price_data.get("price_change_24h", None)
 
+        # Fetch volume changes
         current_volume = get_volume(symbol)
         volume_history[symbol].append(current_volume)
         volume_change_1m = ((current_volume - volume_history[symbol][-2]) / volume_history[symbol][-2]) * 100 if len(volume_history[symbol]) >= 2 else None
@@ -223,19 +255,19 @@ def monitor_pairs():
         volume_change_15m = ((current_volume - volume_history[symbol][-15]) / volume_history[symbol][-15]) * 100 if len(volume_history[symbol]) >= 15 else None
         volume_change_1h = ((current_volume - volume_history[symbol][-60]) / volume_history[symbol][-60]) * 100 if len(volume_history[symbol]) >= 60 else None
 
-        # Check for signal generation and send to Telegram (similar logic as before)
+        # Create dictionaries of OI, price, and volume changes for the symbol
+        oi_changes = {"1m": oi_5m, "5m": oi_5m, "15m": oi_15m, "1h": oi_1h, "24h": oi_24h}
+        price_changes = {"1m": price_change_1m, "5m": price_change_5m, "15m": price_change_15m, "1h": price_change_1h, "24h": price_change_24h}
+        volume_changes = {"1m": volume_change_1m, "5m": volume_change_5m, "15m": volume_change_15m, "1h": volume_change_1h}
 
-# Schedule symbol update every 24 hours at 5:30 GMT
-schedule.every().day.at("05:30").do(update_symbols)
+        # Check if conditions for signal generation are met
+        signal = generate_signal(symbol, current_price, oi_changes, price_changes, volume_changes)
+        
+        # If a signal is generated, send it via Telegram
+        if signal:
+            send_telegram_message(signal)
 
-# Fetch valid symbols on startup
-fetch_valid_symbols()
-
-# Update symbols on startup
-update_symbols()
-
-# Start monitoring pairs every minute
+# Call the monitor_pairs function every minute
 while True:
-    schedule.run_pending()
     monitor_pairs()
     time.sleep(60)
