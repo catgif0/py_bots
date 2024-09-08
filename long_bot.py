@@ -5,7 +5,10 @@ import logging
 from collections import deque
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
+
 from threading import Thread
+import schedule
+from datetime import datetime
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -16,23 +19,57 @@ if not TELEGRAM_BOT_TOKEN:
     logging.error("TELEGRAM_BOT_TOKEN environment variable not set")
     raise ValueError("TELEGRAM_BOT_TOKEN environment variable not set")
 
-
-# Symbols to monitor
-SYMBOLS = ['HFTUSDT', 'XVSUSDT', 'LSKUSDT', 'ONGUSDT', 'BNTUSDT', 'BTCDOMUSDT', 'MTLUSDT', 'ORBSUSDT', 'ARKUSDT', 'TIAUSDC', 'ICXUSDT', 'ONEUSDT', 'AGLDUSDT', 'TWTUSDT']
-
+# Symbols to monitor (initially empty)
+SYMBOLS = []
 
 # Price and volume history to track changes over time intervals
-price_history = {
-    symbol: deque(maxlen=60) for symbol in SYMBOLS  # Store up to 60 prices (one price per minute)
-}
-volume_history = {
-    symbol: deque(maxlen=60) for symbol in SYMBOLS  # Store up to 60 volume data points (one volume per minute)
-}
+price_history = {}
+volume_history = {}
 
 # Initialize FastAPI app
 app = FastAPI()
 
 logging.info("Starting signal_bot.py")
+
+# Function to fetch pairs with volume between 1M and 2M
+def fetch_symbols_with_volume_criteria(min_volume=1_000_000, max_volume=2_000_000):
+    try:
+        url = "https://api.binance.com/api/v3/ticker/24hr"
+        response = requests.get(url)
+        if response.status_code != 200:
+            logging.error(f"Failed to fetch ticker data: {response.status_code}, {response.text}")
+            return []
+        data = response.json()
+        eligible_symbols = []
+
+        # Filter symbols based on volume
+        for ticker in data:
+            symbol = ticker['symbol']
+            if symbol.endswith("USDT"):  # We only want USDT pairs
+                volume = float(ticker['volume'])
+                if min_volume <= volume <= max_volume:
+                    eligible_symbols.append(symbol)
+
+        logging.info(f"Eligible symbols: {eligible_symbols}")
+        return eligible_symbols
+    except Exception as e:
+        logging.error(f"Error fetching symbols: {e}")
+        return []
+
+# Function to refresh the SYMBOLS list at 5:30 GMT every day
+def refresh_symbols():
+    global SYMBOLS, price_history, volume_history
+    logging.info("Refreshing symbols list based on volume criteria...")
+    SYMBOLS = fetch_symbols_with_volume_criteria()
+
+    # Reinitialize price and volume history for new symbols
+    price_history = {symbol: deque(maxlen=60) for symbol in SYMBOLS}
+    volume_history = {symbol: deque(maxlen=60) for symbol in SYMBOLS}
+
+    logging.info(f"Updated symbols list: {SYMBOLS}")
+
+# Schedule the symbol refresh every day at 5:30 GMT
+schedule.every().day.at("05:30").do(refresh_symbols)
 
 # Function to send a message to Telegram
 def send_telegram_message(message):
@@ -267,7 +304,17 @@ def monitor_pairs():
         if signal:
             send_telegram_message(signal)
 
-# Call the monitor_pairs function every minute
-while True:
-    monitor_pairs()
-    time.sleep(60)
+# Start monitoring
+def start_monitoring():
+    # Call the refresh_symbols function at the start to initialize the SYMBOLS list
+    refresh_symbols()
+
+    # Schedule the list to refresh every day at 5:30 GMT
+    while True:
+        schedule.run_pending()  # This checks if it's time to refresh the symbols
+        monitor_pairs()  # Monitor symbols and generate signals
+        time.sleep(60)  # Wait for 1 minute before next check
+
+# Run the monitoring in a separate thread
+monitoring_thread = Thread(target=start_monitoring)
+monitoring_thread.start()
