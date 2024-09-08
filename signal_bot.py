@@ -17,11 +17,14 @@ if not TELEGRAM_BOT_TOKEN:
     raise ValueError("TELEGRAM_BOT_TOKEN environment variable not set")
 
 # Symbols to monitor (You can add more symbols here)
-SYMBOLS = ["BTCUSDT", "ETHUSDT" ,"SYNUSDT" ]
+SYMBOLS = ["BTCUSDT", "ETHUSDT" , "SYNUSDT" ]
 
-# Price history to track changes over time intervals
+# Price and volume history to track changes over time intervals
 price_history = {
     symbol: deque(maxlen=60) for symbol in SYMBOLS  # Store up to 60 prices (one price per minute)
+}
+volume_history = {
+    symbol: deque(maxlen=60) for symbol in SYMBOLS  # Store up to 60 volume data points (one volume per minute)
 }
 
 # Initialize FastAPI app
@@ -135,7 +138,8 @@ def get_volume(symbol):
             logging.error(f"Failed to fetch volume: {response.status_code}, {response.text}")
             return "N/A"
         data = response.json()
-        return f"{float(data['volume']):,.2f}"  # Format as a large number with commas
+        volume = float(data['volume'])  # Current cumulative volume for the last 24 hours
+        return volume
     except Exception as e:
         logging.error(f"Failed to fetch volume: {e}")
         return "N/A"
@@ -161,11 +165,17 @@ def get_funding_rate(symbol):
         logging.error(f"Failed to fetch funding rate: {e}")
         return "N/A"
 
-# Calculate price change percentage
-def calculate_price_change(current_price, previous_price):
-    if previous_price == 0:
+# Calculate change percentage with emojis
+def calculate_change_with_emoji(current_value, previous_value):
+    if previous_value == 0:
         return "N/A"
-    return f"{((current_price - previous_price) / previous_price) * 100:.3f}%"
+    change = ((current_value - previous_value) / previous_value) * 100
+    if change > 0:
+        return f"🟩{change:.3f}%"
+    elif change < 0:
+        return f"🟥{change:.3f}%"
+    else:
+        return "⬜0.000%"
 
 # Function to send market data every minute
 def fetch_and_send_updates():
@@ -176,20 +186,25 @@ def fetch_and_send_updates():
             oi_1h = get_open_interest_change(symbol, '1h')
             oi_24h = get_open_interest_change(symbol, '1d')
             price_data = get_price_data(symbol)
-            volume = get_volume(symbol)
+            current_volume = get_volume(symbol)
             funding_rate = get_funding_rate(symbol)
 
             # Get current price
             current_price = price_data.get('price', 'N/A')
             price_change_24h = price_data.get('price_change_24h', 'N/A')
 
-            # Add the current price to price history for the symbol
+            # Add the current price and volume to price and volume history for the symbol
             price_history[symbol].append(current_price)
+            volume_history[symbol].append(current_volume)
 
-            # Calculate price changes for 5m, 15m, and 1h intervals
-            price_change_5m = calculate_price_change(current_price, price_history[symbol][-5]) if len(price_history[symbol]) >= 5 else "N/A"
-            price_change_15m = calculate_price_change(current_price, price_history[symbol][-15]) if len(price_history[symbol]) >= 15 else "N/A"
-            price_change_1h = calculate_price_change(current_price, price_history[symbol][-60]) if len(price_history[symbol]) >= 60 else "N/A"
+            # Calculate price changes for 1m, 5m, 15m, and 1h intervals
+            price_change_1m = calculate_change_with_emoji(current_price, price_history[symbol][-2]) if len(price_history[symbol]) >= 2 else "N/A"
+            price_change_5m = calculate_change_with_emoji(current_price, price_history[symbol][-5]) if len(price_history[symbol]) >= 5 else "N/A"
+            price_change_15m = calculate_change_with_emoji(current_price, price_history[symbol][-15]) if len(price_history[symbol]) >= 15 else "N/A"
+            price_change_1h = calculate_change_with_emoji(current_price, price_history[symbol][-60]) if len(price_history[symbol]) >= 60 else "N/A"
+
+            # Calculate volume change for 1m interval
+            volume_change_1m = calculate_change_with_emoji(current_volume, volume_history[symbol][-2]) if len(volume_history[symbol]) >= 2 else "N/A"
 
             message = (
                 f"🔴 #{symbol} ${current_price} | OI changed in 15 mins\n\n"
@@ -199,11 +214,13 @@ def fetch_and_send_updates():
                 f"├ 🟥{oi_1h} (1h)\n"
                 f"└ 🟥{oi_24h} (24h)\n\n"
                 f"┌ 📈 Price change \n"
-                f"├ 🟥{price_change_5m} (5m) \n"
-                f"├ 🟥{price_change_15m} (15m)\n"
-                f"├ 🟥{price_change_1h} (1h)\n"
+                f"├ {price_change_1m} (1m)\n"
+                f"├ {price_change_5m} (5m) \n"
+                f"├ {price_change_15m} (15m)\n"
+                f"├ {price_change_1h} (1h)\n"
                 f"└ 🟥{price_change_24h}% (24h)\n\n"
-                f"📊 Volume: {volume} (24h)\n"
+                f"📊 Volume change {volume_change_1m} (1m)\n"
+                f"📊 Volume: {current_volume:,.2f} (24h)\n"
                 f"➕ Funding rate {funding_rate}\n"
                 f"💲Price ${current_price}"
             )
