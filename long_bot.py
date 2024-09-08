@@ -181,6 +181,9 @@ def calculate_change_with_emoji(change_value):
 # Dictionary to store signal statuses per symbol
 signal_status = {}
 
+# Dictionary to store signal statuses per symbol
+signal_status = {}
+
 def generate_signal(symbol, current_price, oi_changes, price_changes, volume_changes):
     global signal_status
     
@@ -235,8 +238,9 @@ def generate_signal(symbol, current_price, oi_changes, price_changes, volume_cha
     
     # Confirm after 5-15 minutes (step 2)
     elif signal_status[symbol]['step'] == 1:
-        # Check if 5 to 15 minutes have passed
         time_since_last_signal = time.time() - signal_status[symbol]['last_signal_time']
+        
+        # Check if 5 to 15 minutes have passed
         if 5 * 60 <= time_since_last_signal <= 15 * 60:
             # Conditions for continuing reversal
             oi_condition_5m = oi_changes.get("5m") is not None and oi_changes["5m"] > 1.5
@@ -254,11 +258,22 @@ def generate_signal(symbol, current_price, oi_changes, price_changes, volume_cha
                 signal_status[symbol]['step'] = 2  # Move to step 2
                 signal_status[symbol]['last_signal_time'] = time.time()  # Update time
                 return signal_message
+            else:
+                # Reset signal tracking if the trend fails to continue
+                signal_message = (
+                    f"STEP 2: TREND WEAKENED!\n\n"
+                    f"PAIR: {symbol}\n"
+                    f"Price: ${current_price:.2f}\n"
+                    f"Trend failed to confirm within 5-15 minutes. Reversal invalidated."
+                )
+                signal_status[symbol]['step'] = 0  # Reset to initial state
+                return signal_message
 
     # Confirm after 1 hour (step 3)
     elif signal_status[symbol]['step'] == 2:
-        # Check if 1 hour has passed
         time_since_last_signal = time.time() - signal_status[symbol]['last_signal_time']
+        
+        # Check if 1 hour has passed
         if time_since_last_signal >= 60 * 60:
             # Conditions for sustained trend in 1-hour timeframe
             oi_condition_1h = oi_changes.get("1h") is not None and oi_changes["1h"] > 1.5
@@ -274,6 +289,16 @@ def generate_signal(symbol, current_price, oi_changes, price_changes, volume_cha
                     f"The reversal has held for 1 hour. Strong trend continuation likely."
                 )
                 signal_status[symbol]['step'] = 3  # Move to step 3 (final step)
+                return signal_message
+            else:
+                # Reset signal tracking if the trend weakens
+                signal_message = (
+                    f"STEP 3: TREND FAILED TO SUSTAIN!\n\n"
+                    f"PAIR: {symbol}\n"
+                    f"Price: ${current_price:.2f}\n"
+                    f"Reversal did not hold for 1 hour. Signal cancelled."
+                )
+                signal_status[symbol]['step'] = 0  # Reset to initial state
                 return signal_message
     
     # No signal generated at this point
