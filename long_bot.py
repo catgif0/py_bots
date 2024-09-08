@@ -178,42 +178,42 @@ def calculate_change_with_emoji(change_value):
     else:
         return "⬜0.000%"
 
-def generate_signal(symbol, current_price, oi_changes, price_changes, volume_changes):
+def generate_reversal_signal(symbol, current_price, oi_changes, price_changes, volume_changes):
     # Log the fetched changes for debugging purposes
     logging.debug(f"OI Changes for {symbol}: {oi_changes}")
     logging.debug(f"Price Changes for {symbol}: {price_changes}")
     logging.debug(f"Volume Changes for {symbol}: {volume_changes}")
 
-    # Define dynamic thresholds based on volatility or average changes
-    oi_threshold_5m = 2.0  # Threshold for 5m OI change
-    price_threshold_5m = 1.5  # Threshold for 5m price change
-    volume_threshold_5m = 10.0  # Threshold for 5m volume change
-    
-    # Consider both short and long-term changes for better trend analysis
-    oi_condition = (
-        oi_changes.get("5m") is not None and oi_changes["5m"] > oi_threshold_5m and
-        oi_changes.get("15m") is not None and oi_changes["15m"] > 0.5  # Add longer-term confirmation
-    )
-    
-    price_condition = (
-        price_changes.get("5m") is not None and abs(price_changes["5m"]) > price_threshold_5m and
-        price_changes.get("15m") is not None and abs(price_changes["15m"]) > 0.5  # Confirm with 15m trend
-    )
-    
-    volume_condition = (
-        volume_changes.get("5m") is not None and abs(volume_changes["5m"]) > volume_threshold_5m and
-        volume_changes.get("15m") is not None and abs(volume_changes["15m"]) > 5.0  # Confirm with 15m volume
-    )
-    
-    # Add a confidence metric by checking how many conditions are met
-    confidence = sum([
-        oi_condition,
-        price_condition,
-        volume_condition
-    ])
+    # Thresholds for price, volume, and open interest changes
+    short_term_oi_growth = 1.0  # OI must grow by at least 1% on 1m/5m
+    short_term_price_growth = 0.5  # Price must grow by at least 0.5% on 1m/5m
+    short_term_volume_growth = 5.0  # Volume must grow by at least 5% on 1m/5m
 
-    # Ensure confidence is high enough to generate a signal
-    if confidence >= 2:
+    # 1. Long-term decline condition (negative changes in 15m, 1h, and 24h)
+    long_term_downtrend = (
+        oi_changes.get("15m") is not None and oi_changes["15m"] < 0 and
+        oi_changes.get("1h") is not None and oi_changes["1h"] < 0 and
+        oi_changes.get("24h") is not None and oi_changes["24h"] < 0 and
+        price_changes.get("15m") is not None and price_changes["15m"] < 0 and
+        price_changes.get("1h") is not None and price_changes["1h"] < 0 and
+        price_changes.get("24h") is not None and price_changes["24h"] < 0 and
+        volume_changes.get("15m") is not None and volume_changes["15m"] < 0 and
+        volume_changes.get("1h") is not None and volume_changes["1h"] < 0 and
+        volume_changes.get("24h") is not None and volume_changes["24h"] < 0
+    )
+
+    # 2. Short-term reversal condition (positive changes in 1m and 5m)
+    short_term_reversal = (
+        oi_changes.get("1m") is not None and oi_changes["1m"] > short_term_oi_growth and
+        oi_changes.get("5m") is not None and oi_changes["5m"] > short_term_oi_growth and
+        price_changes.get("1m") is not None and price_changes["1m"] > short_term_price_growth and
+        price_changes.get("5m") is not None and price_changes["5m"] > short_term_price_growth and
+        volume_changes.get("1m") is not None and volume_changes["1m"] > short_term_volume_growth and
+        volume_changes.get("5m") is not None and volume_changes["5m"] > short_term_volume_growth
+    )
+
+    # 3. Signal generation if both conditions are met
+    if long_term_downtrend and short_term_reversal:
         # Stop Loss (SL) calculation: set to a configurable percentage below current price
         stop_loss = current_price * 0.98  # 2% below the current price
 
@@ -223,21 +223,20 @@ def generate_signal(symbol, current_price, oi_changes, price_changes, volume_cha
 
         # Trading signal message
         signal_message = (
-            f"NEW LONG SIGNAL generated!\n\n"
+            f"NEW REVERSAL LONG SIGNAL generated!\n\n"
             f"PAIR: {symbol}\n"
             f"Price: ${current_price:.2f}\n\n"
             f"Stop Loss: ${stop_loss:.2f}\n\n"
             f"TP1: ${take_profit:.2f}\n"
             f"TP2: ${take_profit * 1.5:.2f}\n"
-            f"TP3: ${take_profit * 2:.2f}\n"  # Multiple take profits for a dynamic exit strategy
-            f"Confidence Level: {confidence}/3"
+            f"TP3: ${take_profit * 2:.2f}\n"
+            f"CONFIDENCE: Reversal from negative long-term to positive short-term."
         )
 
         return signal_message
     else:
         logging.info(f"No signal generated for {symbol}. Monitoring OI, price, and volume changes.")
         return None
-
 
 
 # Function to monitor pairs and check for signal generation
