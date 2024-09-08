@@ -184,23 +184,29 @@ def generate_signal(symbol, current_price, oi_changes, price_changes, volume_cha
     logging.debug(f"Price Changes for {symbol}: {price_changes}")
     logging.debug(f"Volume Changes for {symbol}: {volume_changes}")
     
-    # Conditions for generating the signal
+    # Volatility adjustment factor (example: derived from 24h price changes)
+    volatility_factor = abs(price_changes.get("24h", 1)) / 100  # Higher volatility adjusts thresholds
+
+    # Conditions for generating the signal with dynamic thresholds based on volatility
     oi_condition = (
-        all(change is not None and change < 0 for change in oi_changes.values())
-        and oi_changes.get("5m") is not None and oi_changes["5m"] > 1.5
+        all(change is not None and change < 0 for change in oi_changes.values())  # OI dropping across timeframes
+        and oi_changes.get("5m") is not None and oi_changes["5m"] > 1.5 * volatility_factor  # Dynamic threshold
     )
-    
+
+    # Price condition over multiple time frames for confirmation (weighted for accuracy)
     price_condition_1 = (
-        all(change is not None and change < 0 for change in price_changes.values())
-        and price_changes.get("5m") is not None and price_changes["5m"] > 1.3
+        price_changes.get("1m", 0) < 0  # Short-term price drop
+        and price_changes.get("5m", 0) > 1.3 * volatility_factor  # Significant 5m price rise
+        and price_changes.get("15m", 0) > 0  # Ensure price is recovering over 15m
     )
-    
+
+    # Volume condition: rising volume to confirm the interest in the move
     volume_condition = (
-        all(change is not None and change < 0 for change in volume_changes.values())
-        and volume_changes.get("5m") is not None and volume_changes["5m"] > 12
+        all(change is not None and change < 0 for change in volume_changes.values())  # General volume drop
+        and volume_changes.get("5m") is not None and volume_changes["5m"] > 12 * volatility_factor  # Sharp 5m rise
     )
     
-    # Generate signal if any of the conditions are met
+    # Generate signal if any of the conditions are met (requires both price and volume confirmation)
     if oi_condition and (price_condition_1 or volume_condition):
         # Stop Loss (SL) calculation: set to a configurable percentage below current price
         stop_loss = current_price * 0.98  # 2% below the current price
@@ -224,6 +230,7 @@ def generate_signal(symbol, current_price, oi_changes, price_changes, volume_cha
     else:
         logging.info(f"No signal generated for {symbol}. Monitoring OI, price, and volume changes.")
         return None
+
 
 # Function to monitor pairs and check for signal generation
 def monitor_pairs():
