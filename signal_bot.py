@@ -119,19 +119,19 @@ def get_price_data(symbol):
         logging.error(f"Failed to fetch price data: {e}")
         return {}
 
-# Fetch 24-hour volume change
-def get_volume_change(symbol):
+# Fetch 24-hour volume
+def get_volume(symbol):
     try:
         url = "https://fapi.binance.com/fapi/v1/ticker/24hr"
         params = {"symbol": symbol}
         response = requests.get(url, params=params)
         if response.status_code != 200:
-            logging.error(f"Failed to fetch volume change: {response.status_code}, {response.text}")
+            logging.error(f"Failed to fetch volume: {response.status_code}, {response.text}")
             return "N/A"
         data = response.json()
-        return f"{float(data['volume'])}"
+        return f"{float(data['volume']):,.2f}"  # Format as a large number with commas
     except Exception as e:
-        logging.error(f"Failed to fetch volume change: {e}")
+        logging.error(f"Failed to fetch volume: {e}")
         return "N/A"
 
 # Function to fetch the latest funding rate
@@ -164,7 +164,7 @@ def fetch_and_send_updates():
             oi_1h = get_open_interest_change(symbol, '1h')
             oi_24h = get_open_interest_change(symbol, '1d')
             price_data = get_price_data(symbol)
-            volume_change = get_volume_change(symbol)
+            volume = get_volume(symbol)
             funding_rate = get_funding_rate(symbol)
 
             # Use actual price and 24h price change data
@@ -183,7 +183,7 @@ def fetch_and_send_updates():
                 f"├ 🟥N/A (15m)\n"
                 f"├ 🟥{price_change_24h}% (1h)\n"
                 f"└ 🟥{price_change_24h}% (24h)\n\n"
-                f"📊 Volume change {volume_change}% (24h)\n"
+                f"📊 Volume: {volume} (24h)\n"
                 f"➕ Funding rate {funding_rate}\n"
                 f"💲Price ${price}"
             )
