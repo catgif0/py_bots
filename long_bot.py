@@ -180,18 +180,18 @@ def calculate_change_with_emoji(change_value):
 def generate_signal(symbol, current_price, oi_changes, price_changes, volume_changes):
     # Conditions for generating the signal
     oi_condition = (
-        all(change < 0 for change in oi_changes.values() if change is not None)
-        and oi_changes["5m"] > 1.5
+        all(change is not None and change < 0 for change in oi_changes.values())
+        and oi_changes.get("5m") is not None and oi_changes["5m"] > 1.5
     )
     
     price_condition_1 = (
-        all(change < 0 for change in price_changes.values() if change is not None)
-        and price_changes["5m"] > 1.3
+        all(change is not None and change < 0 for change in price_changes.values())
+        and price_changes.get("5m") is not None and price_changes["5m"] > 1.3
     )
     
     volume_condition = (
-        all(change < 0 for change in volume_changes.values() if change is not None)
-        and volume_changes["5m"] > 12
+        all(change is not None and change < 0 for change in volume_changes.values())
+        and volume_changes.get("5m") is not None and volume_changes["5m"] > 12
     )
     
     # Generate signal if any of the conditions are met
