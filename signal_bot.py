@@ -183,27 +183,21 @@ def periodic_alert():
             send_telegram_message(message)
     Timer(120, periodic_alert).start()  # Schedule to run every 2 minutes (120 seconds)
 
+# WebSocket open handling
+def on_open(ws):
+    logging.info("WebSocket connection opened.")
+
 # WebSocket error handling
 def on_error(ws, error):
     logging.error(f"WebSocket Error: {error}")
 
-# WebSocket close handling
-def on_close(ws):
-    logging.info("### WebSocket closed ###")
-
-# WebSocket open handling
-def on_open(ws):
-    logging.info("### WebSocket opened ###")
-
-# WebSocket runner
-def run():
-    logging.info("Starting WebSocket connection.")
-    websocket.enableTrace(True)
-    ws = websocket.WebSocketApp(SOCKET, on_message=on_message, on_error=on_error, on_close=on_close)
-    ws.on_open = on_open
-    ws.run_forever()
-
-if __name__ == "__main__":
-    logging.info(f"Starting market data bot with selected pairs: {SELECTED_PAIRS}")
-    periodic_alert()  # Start sending messages every 2 minutes
-    run()  # Start WebSocket connection
+# Periodic alert function
+def periodic_alert():
+    global latest_data
+    logging.info("Periodic alert function running.")
+    for pair in SELECTED_PAIRS:
+        if latest_data[pair]:
+            logging.info(f"Preparing to send message for {pair}.")
+            message = create_message(pair, latest_data[pair])
+            send_telegram_message(message)
+    Timer(120, periodic_alert).start()  # Schedule to run every 2 minutes (120 seconds)
