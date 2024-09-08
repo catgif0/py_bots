@@ -5,6 +5,7 @@ import os
 import logging
 import random
 from threading import Timer
+from flask import Flask
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -18,6 +19,13 @@ TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 if not TELEGRAM_BOT_TOKEN:
     logging.error("TELEGRAM_BOT_TOKEN environment variable not set")
     raise ValueError("TELEGRAM_BOT_TOKEN environment variable not set")
+
+# Flask app initialization
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Market Alert Bot is running!"
 
 logging.info("Starting market_alert.py")
 
@@ -151,4 +159,3 @@ if __name__ == "__main__":
     logging.info(f"Starting market data bot with selected pairs: {SELECTED_PAIRS}")
     periodic_alert()  # Start sending messages every 2 minutes
     run()  # Start WebSocket connection
-
