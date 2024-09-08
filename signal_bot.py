@@ -142,13 +142,16 @@ def create_message(pair, data):
     )
     return message
 
+# WebSocket open handling
+def on_open(ws):
+    logging.info("WebSocket connection successfully opened.")
+
 # Function to process WebSocket messages for selected pairs
 def on_message(ws, message):
+    logging.info("Received WebSocket message.")
     global latest_data
     try:
         data = json.loads(message)
-        logging.info(f"Received WebSocket message: {message}")
-
         for ticker in data:
             symbol = ticker.get('s')
             if symbol in SELECTED_PAIRS:  # Process only selected pairs
@@ -174,14 +177,15 @@ def on_message(ws, message):
 
 # Function to send message every 2 minutes
 def periodic_alert():
+    logging.info("Periodic alert triggered.")
     global latest_data
-    logging.info("Periodic alert function running.")
     for pair in SELECTED_PAIRS:
         if latest_data[pair]:
             logging.info(f"Preparing to send message for {pair}.")
             message = create_message(pair, latest_data[pair])
             send_telegram_message(message)
     Timer(120, periodic_alert).start()  # Schedule to run every 2 minutes (120 seconds)
+
 
 # WebSocket error handling
 def on_error(ws, error):
