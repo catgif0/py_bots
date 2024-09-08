@@ -7,21 +7,14 @@ WORKDIR /usr/src/app
 # Copy the current directory contents into the container at /usr/src/app
 COPY . .
 
-# Install any needed packages specified in requirements.txt
+# Install required Python packages
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install tweepy
-RUN pip install tweepy
-
-# Install Gunicorn
-RUN pip install gunicorn
+# Install FastAPI and Uvicorn
+RUN pip install fastapi uvicorn websocket-client requests
 
 # Expose port 8080 to the outside world
 EXPOSE 8080
 
-# Define environment variables for Flask
-ENV FLASK_APP=signal_bot.py
-ENV FLASK_ENV=production
-
-# Run the Gunicorn server to serve the Flask application
-CMD ["gunicorn", "-b", "0.0.0.0:8080", "signal_bot:app"]
+# Command to run the Uvicorn server to serve the FastAPI application
+CMD ["uvicorn", "signal_bot:app", "--host", "0.0.0.0", "--port", "8080"]
