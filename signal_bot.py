@@ -17,7 +17,7 @@ if not TELEGRAM_BOT_TOKEN:
     raise ValueError("TELEGRAM_BOT_TOKEN environment variable not set")
 
 # Symbols to monitor (You can add more symbols here)
-SYMBOLS = ["BTCUSDT", "ETHUSDT"]
+SYMBOLS = ["BTCUSDT", "ETHUSDT" , "MANAUSDT"]
 
 # Price and volume history to track changes over time intervals
 price_history = {
@@ -103,7 +103,7 @@ def get_open_interest_change(symbol, interval):
         if len(data) < 2:
             return "N/A"
         oi_change = ((float(data[-1]['sumOpenInterest']) - float(data[-2]['sumOpenInterest'])) / float(data[-2]['sumOpenInterest'])) * 100
-        return f"{oi_change:.2f}%"
+        return oi_change
     except Exception as e:
         logging.error(f"Failed to fetch open interest change: {e}")
         return "N/A"
@@ -177,44 +177,52 @@ def calculate_change_with_emoji(current_value, previous_value):
     else:
         return "⬜0.000%"
 
+# Calculate and return emoji-based OI percentage
+def get_open_interest_change_with_emoji(symbol, interval):
+    oi_change = get_open_interest_change(symbol, interval)
+    if isinstance(oi_change, str):
+        return "N/A"
+    return calculate_change_with_emoji(oi_change, 0)
+
 # Function to send market data every minute
 def fetch_and_send_updates():
     while True:
         for symbol in SYMBOLS:
-            oi_5m = get_open_interest_change(symbol, '5m')
-            oi_15m = get_open_interest_change(symbol, '15m')
-            oi_1h = get_open_interest_change(symbol, '1h')
-            oi_24h = get_open_interest_change(symbol, '1d')
-            price_data = get_price_data(symbol)
-            current_volume = get_volume(symbol)
-            funding_rate = get_funding_rate(symbol)
+            # Open Interest Changes
+            oi_5m = calculate_change_with_emoji(get_open_interest_change(symbol, '5m'), 0)
+            oi_15m = calculate_change_with_emoji(get_open_interest_change(symbol, '15m'), 0)
+            oi_1h = calculate_change_with_emoji(get_open_interest_change(symbol, '1h'), 0)
+            oi_24h = calculate_change_with_emoji(get_open_interest_change(symbol, '1d'), 0)
 
-            # Get current price
+            # Price Changes
+            price_data = get_price_data(symbol)
             current_price = price_data.get('price', 'N/A')
             price_change_24h = price_data.get('price_change_24h', 'N/A')
 
-            # Add the current price and volume to price and volume history for the symbol
             price_history[symbol].append(current_price)
-            volume_history[symbol].append(current_volume)
-
-            # Calculate price changes for 1m, 5m, 15m, and 1h intervals
             price_change_1m = calculate_change_with_emoji(current_price, price_history[symbol][-2]) if len(price_history[symbol]) >= 2 else "N/A"
             price_change_5m = calculate_change_with_emoji(current_price, price_history[symbol][-5]) if len(price_history[symbol]) >= 5 else "N/A"
             price_change_15m = calculate_change_with_emoji(current_price, price_history[symbol][-15]) if len(price_history[symbol]) >= 15 else "N/A"
             price_change_1h = calculate_change_with_emoji(current_price, price_history[symbol][-60]) if len(price_history[symbol]) >= 60 else "N/A"
 
-            # Calculate volume changes for 1m, 15m, and 1h intervals
+            # Volume Changes
+            current_volume = get_volume(symbol)
+            volume_history[symbol].append(current_volume)
             volume_change_1m = calculate_change_with_emoji(current_volume, volume_history[symbol][-2]) if len(volume_history[symbol]) >= 2 else "N/A"
             volume_change_15m = calculate_change_with_emoji(current_volume, volume_history[symbol][-15]) if len(volume_history[symbol]) >= 15 else "N/A"
             volume_change_1h = calculate_change_with_emoji(current_volume, volume_history[symbol][-60]) if len(volume_history[symbol]) >= 60 else "N/A"
 
+            # Funding Rate
+            funding_rate = get_funding_rate(symbol)
+
+            # Construct and send the message
             message = (
                 f"🔴 #{symbol} ${current_price} | OI changed in 15 mins\n\n"
                 f"┌ 🌐 Open Interest \n"
-                f"├ 🟥{oi_5m} (5m) \n"
-                f"├ 🟥{oi_15m} (15m)\n"
-                f"├ 🟥{oi_1h} (1h)\n"
-                f"└ 🟥{oi_24h} (24h)\n\n"
+                f"├ {oi_5m} (5m) \n"
+                f"├ {oi_15m} (15m)\n"
+                f"├ {oi_1h} (1h)\n"
+                f"└ {oi_24h} (24h)\n\n"
                 f"┌ 📈 Price change \n"
                 f"├ {price_change_1m} (1m)\n"
                 f"├ {price_change_5m} (5m) \n"
