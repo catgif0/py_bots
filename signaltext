@@ -1,0 +1,46 @@
+def generate_signal(symbol, current_price, oi_changes, price_changes, volume_changes):
+    # Log the fetched changes for debugging purposes
+    logging.debug(f"OI Changes for {symbol}: {oi_changes}")
+    logging.debug(f"Price Changes for {symbol}: {price_changes}")
+    logging.debug(f"Volume Changes for {symbol}: {volume_changes}")
+    
+    # Conditions for generating the signal
+    oi_condition = (
+        all(change is not None and change < 0 for change in oi_changes.values())
+        and oi_changes.get("5m") is not None and oi_changes["5m"] > 1.5
+    )
+    
+    price_condition_1 = (
+        all(change is not None and change < 0 for change in price_changes.values())
+        and price_changes.get("5m") is not None and price_changes["5m"] > 1.3
+    )
+    
+    volume_condition = (
+        all(change is not None and change < 0 for change in volume_changes.values())
+        and volume_changes.get("5m") is not None and volume_changes["5m"] > 12
+    )
+    
+    # Generate signal if any of the conditions are met
+    if oi_condition and (price_condition_1 or volume_condition):
+        # Stop Loss (SL) calculation: set to a configurable percentage below current price
+        stop_loss = current_price * 0.98  # 2% below the current price
+        
+        # Take Profit (TP) calculation: based on a 1:2 reward ratio
+        risk = current_price - stop_loss
+        take_profit = current_price + (2 * risk)
+        
+        # Trading signal message
+        signal_message = (
+            f"NEW LONG SIGNAL generated!\n\n"
+            f"PAIR: {symbol}\n"
+            f"Price: ${current_price:.2f}\n\n"
+            f"Stop Loss: ${stop_loss:.2f}\n\n"
+            f"TP1: ${take_profit:.2f}\n"
+            f"TP2: ${take_profit:.2f}\n"
+            f"TP3: ${take_profit:.2f}\n"
+        )
+        
+        return signal_message
+    else:
+        logging.info(f"No signal generated for {symbol}. Monitoring OI, price, and volume changes.")
+        return None
