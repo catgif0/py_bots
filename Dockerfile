@@ -7,11 +7,11 @@ WORKDIR /usr/src/app
 # Copy the current directory contents into the container at /usr/src/app
 COPY . .
 
-# Install required Python packages
+# Install required Python packages from requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install FastAPI and Uvicorn
-RUN pip install fastapi uvicorn websocket-client requests
+# Install additional dependencies: FastAPI, Uvicorn, and Schedule
+RUN pip install fastapi uvicorn websocket-client requests schedule
 
 # Expose port 8080 to the outside world
 EXPOSE 8080
