@@ -17,4 +17,4 @@ RUN pip install fastapi uvicorn websocket-client requests
 EXPOSE 8080
 
 # Command to run the Uvicorn server to serve the FastAPI application
-CMD ["uvicorn", "signal_bot:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["uvicorn", "long_bot:app", "--host", "0.0.0.0", "--port", "8080"]
