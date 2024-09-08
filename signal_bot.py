@@ -99,24 +99,24 @@ def get_open_interest_change(symbol, interval):
         logging.error(f"Failed to fetch open interest change: {e}")
         return "N/A"
 
-# Fetch price change percentage for the symbol
-def get_price_change(symbol):
+# Fetch latest price and price change percentage for the symbol
+def get_price_data(symbol):
     try:
         url = "https://fapi.binance.com/fapi/v1/ticker/24hr"
         params = {"symbol": symbol}
         response = requests.get(url, params=params)
         if response.status_code != 200:
-            logging.error(f"Failed to fetch price change: {response.status_code}, {response.text}")
+            logging.error(f"Failed to fetch price data: {response.status_code}, {response.text}")
             return {}
         data = response.json()
+        price = float(data['lastPrice'])  # Fetch the current price
+        price_change_24h = float(data['priceChangePercent'])  # 24-hour price change percentage
         return {
-            "5m": "N/A",  # Binance API doesn't provide 5m changes, but we can calculate this if needed
-            "15m": "N/A",  # Same for 15m
-            "1h": f"{float(data['priceChangePercent'])}%",
-            "24h": f"{float(data['priceChangePercent'])}%"
+            "price": price,
+            "price_change_24h": price_change_24h
         }
     except Exception as e:
-        logging.error(f"Failed to fetch price change: {e}")
+        logging.error(f"Failed to fetch price data: {e}")
         return {}
 
 # Fetch 24-hour volume change
@@ -149,7 +149,7 @@ def get_funding_rate(symbol):
         data = response.json()
         if len(data) > 0:
             funding_rate = float(data[0]["fundingRate"]) * 100
-            return f"{funding_rate:.2f}"
+            return f"{funding_rate:.2f}%"
         return "N/A"
     except Exception as e:
         logging.error(f"Failed to fetch funding rate: {e}")
@@ -163,10 +163,13 @@ def fetch_and_send_updates():
             oi_15m = get_open_interest_change(symbol, '15m')
             oi_1h = get_open_interest_change(symbol, '1h')
             oi_24h = get_open_interest_change(symbol, '1d')
-            price_changes = get_price_change(symbol)
+            price_data = get_price_data(symbol)
             volume_change = get_volume_change(symbol)
             funding_rate = get_funding_rate(symbol)
-            price = price_changes.get('1h', 'N/A')  # Placeholder for the current price, should be from the price ticker
+
+            # Use actual price and 24h price change data
+            price = price_data.get('price', 'N/A')
+            price_change_24h = price_data.get('price_change_24h', 'N/A')
 
             message = (
                 f"🔴 #{symbol} ${price} | OI changed in 15 mins\n\n"
@@ -176,12 +179,12 @@ def fetch_and_send_updates():
                 f"├ 🟥{oi_1h} (1h)\n"
                 f"└ 🟥{oi_24h} (24h)\n\n"
                 f"┌ 📈 Price change \n"
-                f"├ 🟥{price_changes.get('5m', 'N/A')} (5m) \n"
-                f"├ 🟥{price_changes.get('15m', 'N/A')} (15m)\n"
-                f"├ 🟥{price_changes.get('1h', 'N/A')} (1h)\n"
-                f"└ 🟥{price_changes.get('24h', 'N/A')} (24h)\n\n"
+                f"├ 🟥N/A (5m) \n"
+                f"├ 🟥N/A (15m)\n"
+                f"├ 🟥{price_change_24h}% (1h)\n"
+                f"└ 🟥{price_change_24h}% (24h)\n\n"
                 f"📊 Volume change {volume_change}% (24h)\n"
-                f"➕ Funding rate {funding_rate}%\n"
+                f"➕ Funding rate {funding_rate}\n"
                 f"💲Price ${price}"
             )
             send_telegram_message(message)
