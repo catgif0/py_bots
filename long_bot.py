@@ -176,8 +176,12 @@ def calculate_change_with_emoji(change_value):
     else:
         return "⬜0.000%"
 
-# Function to generate trading signal
 def generate_signal(symbol, current_price, oi_changes, price_changes, volume_changes):
+    # Log the fetched changes for debugging purposes
+    logging.debug(f"OI Changes for {symbol}: {oi_changes}")
+    logging.debug(f"Price Changes for {symbol}: {price_changes}")
+    logging.debug(f"Volume Changes for {symbol}: {volume_changes}")
+    
     # Conditions for generating the signal
     oi_condition = (
         all(change is not None and change < 0 for change in oi_changes.values())
@@ -218,6 +222,8 @@ def generate_signal(symbol, current_price, oi_changes, price_changes, volume_cha
     else:
         logging.info(f"No signal generated for {symbol}. Monitoring OI, price, and volume changes.")
         return None
+
+
 
 # Function to monitor pairs and check for signal generation
 def monitor_pairs():
