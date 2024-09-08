@@ -2,6 +2,7 @@ import time
 import requests
 import os
 import logging
+from collections import deque
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from threading import Thread
@@ -16,7 +17,12 @@ if not TELEGRAM_BOT_TOKEN:
     raise ValueError("TELEGRAM_BOT_TOKEN environment variable not set")
 
 # Symbols to monitor (You can add more symbols here)
-SYMBOLS = ["BTCUSDT", "ETHUSDT"]
+SYMBOLS = ["BTCUSDT", "ETHUSDT" ,"SYNUSDT" ]
+
+# Price history to track changes over time intervals
+price_history = {
+    symbol: deque(maxlen=60) for symbol in SYMBOLS  # Store up to 60 prices (one price per minute)
+}
 
 # Initialize FastAPI app
 app = FastAPI()
@@ -155,6 +161,12 @@ def get_funding_rate(symbol):
         logging.error(f"Failed to fetch funding rate: {e}")
         return "N/A"
 
+# Calculate price change percentage
+def calculate_price_change(current_price, previous_price):
+    if previous_price == 0:
+        return "N/A"
+    return f"{((current_price - previous_price) / previous_price) * 100:.3f}%"
+
 # Function to send market data every minute
 def fetch_and_send_updates():
     while True:
@@ -167,25 +179,33 @@ def fetch_and_send_updates():
             volume = get_volume(symbol)
             funding_rate = get_funding_rate(symbol)
 
-            # Use actual price and 24h price change data
-            price = price_data.get('price', 'N/A')
+            # Get current price
+            current_price = price_data.get('price', 'N/A')
             price_change_24h = price_data.get('price_change_24h', 'N/A')
 
+            # Add the current price to price history for the symbol
+            price_history[symbol].append(current_price)
+
+            # Calculate price changes for 5m, 15m, and 1h intervals
+            price_change_5m = calculate_price_change(current_price, price_history[symbol][-5]) if len(price_history[symbol]) >= 5 else "N/A"
+            price_change_15m = calculate_price_change(current_price, price_history[symbol][-15]) if len(price_history[symbol]) >= 15 else "N/A"
+            price_change_1h = calculate_price_change(current_price, price_history[symbol][-60]) if len(price_history[symbol]) >= 60 else "N/A"
+
             message = (
-                f"🔴 #{symbol} ${price} | OI changed in 15 mins\n\n"
+                f"🔴 #{symbol} ${current_price} | OI changed in 15 mins\n\n"
                 f"┌ 🌐 Open Interest \n"
                 f"├ 🟥{oi_5m} (5m) \n"
                 f"├ 🟥{oi_15m} (15m)\n"
                 f"├ 🟥{oi_1h} (1h)\n"
                 f"└ 🟥{oi_24h} (24h)\n\n"
                 f"┌ 📈 Price change \n"
-                f"├ 🟥N/A (5m) \n"
-                f"├ 🟥N/A (15m)\n"
-                f"├ 🟥{price_change_24h}% (1h)\n"
+                f"├ 🟥{price_change_5m} (5m) \n"
+                f"├ 🟥{price_change_15m} (15m)\n"
+                f"├ 🟥{price_change_1h} (1h)\n"
                 f"└ 🟥{price_change_24h}% (24h)\n\n"
                 f"📊 Volume: {volume} (24h)\n"
                 f"➕ Funding rate {funding_rate}\n"
-                f"💲Price ${price}"
+                f"💲Price ${current_price}"
             )
             send_telegram_message(message)
 
