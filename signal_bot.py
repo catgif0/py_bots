@@ -17,7 +17,7 @@ if not TELEGRAM_BOT_TOKEN:
     raise ValueError("TELEGRAM_BOT_TOKEN environment variable not set")
 
 # Symbols to monitor (You can add more symbols here)
-SYMBOLS = ["BTCUSDT", "ETHUSDT" , "SYNUSDT" ]
+SYMBOLS = ["BTCUSDT", "ETHUSDT"]
 
 # Price and volume history to track changes over time intervals
 price_history = {
@@ -203,8 +203,10 @@ def fetch_and_send_updates():
             price_change_15m = calculate_change_with_emoji(current_price, price_history[symbol][-15]) if len(price_history[symbol]) >= 15 else "N/A"
             price_change_1h = calculate_change_with_emoji(current_price, price_history[symbol][-60]) if len(price_history[symbol]) >= 60 else "N/A"
 
-            # Calculate volume change for 1m interval
+            # Calculate volume changes for 1m, 15m, and 1h intervals
             volume_change_1m = calculate_change_with_emoji(current_volume, volume_history[symbol][-2]) if len(volume_history[symbol]) >= 2 else "N/A"
+            volume_change_15m = calculate_change_with_emoji(current_volume, volume_history[symbol][-15]) if len(volume_history[symbol]) >= 15 else "N/A"
+            volume_change_1h = calculate_change_with_emoji(current_volume, volume_history[symbol][-60]) if len(volume_history[symbol]) >= 60 else "N/A"
 
             message = (
                 f"🔴 #{symbol} ${current_price} | OI changed in 15 mins\n\n"
@@ -220,6 +222,8 @@ def fetch_and_send_updates():
                 f"├ {price_change_1h} (1h)\n"
                 f"└ 🟥{price_change_24h}% (24h)\n\n"
                 f"📊 Volume change {volume_change_1m} (1m)\n"
+                f"📊 Volume change {volume_change_15m} (15m)\n"
+                f"📊 Volume change {volume_change_1h} (1h)\n"
                 f"📊 Volume: {current_volume:,.2f} (24h)\n"
                 f"➕ Funding rate {funding_rate}\n"
                 f"💲Price ${current_price}"
