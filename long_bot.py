@@ -20,6 +20,7 @@ if not TELEGRAM_BOT_TOKEN:
 
 # Symbols to monitor (initial empty list)
 SYMBOLS = []
+VALID_SYMBOLS = set()
 
 # Price and volume history to track changes over time intervals
 price_history = {}
@@ -84,6 +85,22 @@ def get_chat_ids():
         logging.error(f"Failed to get chat IDs: {e}")
         return []
 
+# Fetch valid symbols from Binance and store them
+def fetch_valid_symbols():
+    global VALID_SYMBOLS
+    try:
+        logging.info("Fetching valid trading symbols from Binance...")
+        url = "https://api.binance.com/api/v3/ticker/24hr"
+        response = requests.get(url)
+        if response.status_code != 200:
+            logging.error(f"Failed to fetch valid symbols: {response.status_code}, {response.text}")
+            return
+        data = response.json()
+        VALID_SYMBOLS = {item['symbol'] for item in data}
+        logging.info(f"Valid symbols fetched: {len(VALID_SYMBOLS)} symbols.")
+    except Exception as e:
+        logging.error(f"Error fetching valid symbols: {e}")
+
 # Fetch dynamic symbols based on volume < 1 million USDT in the last 24 hours
 def update_symbols():
     try:
@@ -98,7 +115,7 @@ def update_symbols():
         global SYMBOLS
         SYMBOLS = [
             item['symbol'] for item in data
-            if item['symbol'].endswith("USDT") and float(item['quoteVolume']) < 1_000_000
+            if item['symbol'].endswith("USDT") and float(item['quoteVolume']) < 1_000_000 and item['symbol'] in VALID_SYMBOLS
         ]
         
         logging.info(f"Symbols updated: {SYMBOLS}")
@@ -114,6 +131,9 @@ def update_symbols():
 # Function to fetch open interest change for the symbol
 def get_open_interest_change(symbol, interval):
     try:
+        if symbol not in VALID_SYMBOLS:
+            logging.warning(f"Skipping invalid symbol: {symbol}")
+            return None
         url = "https://fapi.binance.com/futures/data/openInterestHist"
         params = {
             "symbol": symbol,
@@ -136,6 +156,9 @@ def get_open_interest_change(symbol, interval):
 # Fetch price data for the symbol
 def get_price_data(symbol):
     try:
+        if symbol not in VALID_SYMBOLS:
+            logging.warning(f"Skipping invalid symbol: {symbol}")
+            return {}
         url = "https://fapi.binance.com/fapi/v1/ticker/24hr"
         params = {"symbol": symbol}
         response = requests.get(url, params=params)
@@ -156,6 +179,9 @@ def get_price_data(symbol):
 # Fetch volume data
 def get_volume(symbol):
     try:
+        if symbol not in VALID_SYMBOLS:
+            logging.warning(f"Skipping invalid symbol: {symbol}")
+            return "N/A"
         url = "https://fapi.binance.com/fapi/v1/ticker/24hr"
         params = {"symbol": symbol}
         response = requests.get(url, params=params)
@@ -201,6 +227,9 @@ def monitor_pairs():
 
 # Schedule symbol update every 24 hours at 5:30 GMT
 schedule.every().day.at("05:30").do(update_symbols)
+
+# Fetch valid symbols on startup
+fetch_valid_symbols()
 
 # Update symbols on startup
 update_symbols()
