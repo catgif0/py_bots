@@ -1,0 +1,5 @@
+websocket-client
+tweepy
+flask
+requests
+beautifulsoup4
