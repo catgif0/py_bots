@@ -203,10 +203,6 @@ def on_open(ws):
     logging.info("### WebSocket: I've updated the code to fetch real-time funding rates and open interest from the Binance API.")
 
 
-1. **Fetching Funding Rate**: Using the `/fapi/v1/fundingRate` endpoint.
-2. **Fetching Open Interest**: Using the `/futures/data/openInterestHist` endpoint for various intervals (5m, 15m, 1h, 24h).
-
-Here’s the updated code:
 
 ```python
 # Fetch actual funding rate from Binance API
