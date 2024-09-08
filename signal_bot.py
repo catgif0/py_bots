@@ -17,7 +17,7 @@ if not TELEGRAM_BOT_TOKEN:
     raise ValueError("TELEGRAM_BOT_TOKEN environment variable not set")
 
 # Symbols to monitor (You can add more symbols here)
-SYMBOLS = ["BTCUSDT", "ETHUSDT" , "MANAUSDT"]
+SYMBOLS = ["BTCUSDT", "ETHUSDT", "MANAUSDT", "SYNUSDT"]
 
 # Price and volume history to track changes over time intervals
 price_history = {
@@ -98,15 +98,15 @@ def get_open_interest_change(symbol, interval):
         response = requests.get(url, params=params)
         if response.status_code != 200:
             logging.error(f"Failed to fetch open interest: {response.status_code}, {response.text}")
-            return "N/A"
+            return None
         data = response.json()
         if len(data) < 2:
-            return "N/A"
+            return None
         oi_change = ((float(data[-1]['sumOpenInterest']) - float(data[-2]['sumOpenInterest'])) / float(data[-2]['sumOpenInterest'])) * 100
         return oi_change
     except Exception as e:
         logging.error(f"Failed to fetch open interest change: {e}")
-        return "N/A"
+        return None
 
 # Fetch latest price and price change percentage for the symbol
 def get_price_data(symbol):
@@ -166,51 +166,43 @@ def get_funding_rate(symbol):
         return "N/A"
 
 # Calculate change percentage with emojis
-def calculate_change_with_emoji(current_value, previous_value):
-    if previous_value == 0:
+def calculate_change_with_emoji(change_value):
+    if change_value is None:
         return "N/A"
-    change = ((current_value - previous_value) / previous_value) * 100
-    if change > 0:
-        return f"🟩{change:.3f}%"
-    elif change < 0:
-        return f"🟥{change:.3f}%"
+    if change_value > 0:
+        return f"🟩{change_value:.3f}%"
+    elif change_value < 0:
+        return f"🟥{change_value:.3f}%"
     else:
         return "⬜0.000%"
-
-# Calculate and return emoji-based OI percentage
-def get_open_interest_change_with_emoji(symbol, interval):
-    oi_change = get_open_interest_change(symbol, interval)
-    if isinstance(oi_change, str):
-        return "N/A"
-    return calculate_change_with_emoji(oi_change, 0)
 
 # Function to send market data every minute
 def fetch_and_send_updates():
     while True:
         for symbol in SYMBOLS:
             # Open Interest Changes
-            oi_5m = calculate_change_with_emoji(get_open_interest_change(symbol, '5m'), 0)
-            oi_15m = calculate_change_with_emoji(get_open_interest_change(symbol, '15m'), 0)
-            oi_1h = calculate_change_with_emoji(get_open_interest_change(symbol, '1h'), 0)
-            oi_24h = calculate_change_with_emoji(get_open_interest_change(symbol, '1d'), 0)
+            oi_5m = calculate_change_with_emoji(get_open_interest_change(symbol, '5m'))
+            oi_15m = calculate_change_with_emoji(get_open_interest_change(symbol, '15m'))
+            oi_1h = calculate_change_with_emoji(get_open_interest_change(symbol, '1h'))
+            oi_24h = calculate_change_with_emoji(get_open_interest_change(symbol, '1d'))
 
             # Price Changes
             price_data = get_price_data(symbol)
             current_price = price_data.get('price', 'N/A')
-            price_change_24h = price_data.get('price_change_24h', 'N/A')
+            price_change_24h = calculate_change_with_emoji(price_data.get('price_change_24h'))
 
             price_history[symbol].append(current_price)
-            price_change_1m = calculate_change_with_emoji(current_price, price_history[symbol][-2]) if len(price_history[symbol]) >= 2 else "N/A"
-            price_change_5m = calculate_change_with_emoji(current_price, price_history[symbol][-5]) if len(price_history[symbol]) >= 5 else "N/A"
-            price_change_15m = calculate_change_with_emoji(current_price, price_history[symbol][-15]) if len(price_history[symbol]) >= 15 else "N/A"
-            price_change_1h = calculate_change_with_emoji(current_price, price_history[symbol][-60]) if len(price_history[symbol]) >= 60 else "N/A"
+            price_change_1m = calculate_change_with_emoji(((current_price - price_history[symbol][-2]) / price_history[symbol][-2]) * 100) if len(price_history[symbol]) >= 2 else "N/A"
+            price_change_5m = calculate_change_with_emoji(((current_price - price_history[symbol][-5]) / price_history[symbol][-5]) * 100) if len(price_history[symbol]) >= 5 else "N/A"
+            price_change_15m = calculate_change_with_emoji(((current_price - price_history[symbol][-15]) / price_history[symbol][-15]) * 100) if len(price_history[symbol]) >= 15 else "N/A"
+            price_change_1h = calculate_change_with_emoji(((current_price - price_history[symbol][-60]) / price_history[symbol][-60]) * 100) if len(price_history[symbol]) >= 60 else "N/A"
 
             # Volume Changes
             current_volume = get_volume(symbol)
             volume_history[symbol].append(current_volume)
-            volume_change_1m = calculate_change_with_emoji(current_volume, volume_history[symbol][-2]) if len(volume_history[symbol]) >= 2 else "N/A"
-            volume_change_15m = calculate_change_with_emoji(current_volume, volume_history[symbol][-15]) if len(volume_history[symbol]) >= 15 else "N/A"
-            volume_change_1h = calculate_change_with_emoji(current_volume, volume_history[symbol][-60]) if len(volume_history[symbol]) >= 60 else "N/A"
+            volume_change_1m = calculate_change_with_emoji(((current_volume - volume_history[symbol][-2]) / volume_history[symbol][-2]) * 100) if len(volume_history[symbol]) >= 2 else "N/A"
+            volume_change_15m = calculate_change_with_emoji(((current_volume - volume_history[symbol][-15]) / volume_history[symbol][-15]) * 100) if len(volume_history[symbol]) >= 15 else "N/A"
+            volume_change_1h = calculate_change_with_emoji(((current_volume - volume_history[symbol][-60]) / volume_history[symbol][-60]) * 100) if len(volume_history[symbol]) >= 60 else "N/A"
 
             # Funding Rate
             funding_rate = get_funding_rate(symbol)
@@ -228,7 +220,7 @@ def fetch_and_send_updates():
                 f"├ {price_change_5m} (5m) \n"
                 f"├ {price_change_15m} (15m)\n"
                 f"├ {price_change_1h} (1h)\n"
-                f"└ 🟥{price_change_24h}% (24h)\n\n"
+                f"└ {price_change_24h} (24h)\n\n"
                 f"📊 Volume change {volume_change_1m} (1m)\n"
                 f"📊 Volume change {volume_change_15m} (15m)\n"
                 f"📊 Volume change {volume_change_1h} (1h)\n"
