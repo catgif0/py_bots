@@ -20,8 +20,8 @@ RUN pip install gunicorn
 EXPOSE 8080
 
 # Define environment variables for Flask
-ENV FLASK_APP=twitter_video_alert.py
+ENV FLASK_APP=signal_bot.py
 ENV FLASK_ENV=production
 
 # Run the Gunicorn server to serve the Flask application
-CMD ["gunicorn", "-b", "0.0.0.0:8080", "twitter_video_alert:app"]
+CMD ["gunicorn", "-b", "0.0.0.0:8080", "signal_bot:app"]
