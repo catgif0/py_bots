@@ -178,65 +178,108 @@ def calculate_change_with_emoji(change_value):
     else:
         return "⬜0.000%"
 
-def generate_reversal_signal(symbol, current_price, oi_changes, price_changes, volume_changes):
+# Dictionary to store signal statuses per symbol
+signal_status = {}
+
+def generate_signal(symbol, current_price, oi_changes, price_changes, volume_changes):
+    global signal_status
+    
+    # Initialize signal status for the symbol if not already present
+    if symbol not in signal_status:
+        signal_status[symbol] = {
+            'step': 0,  # No signal yet
+            'last_signal_time': time.time()  # Track time of last signal
+        }
+    
     # Log the fetched changes for debugging purposes
     logging.debug(f"OI Changes for {symbol}: {oi_changes}")
     logging.debug(f"Price Changes for {symbol}: {price_changes}")
     logging.debug(f"Volume Changes for {symbol}: {volume_changes}")
-
-    # Thresholds for price, volume, and open interest changes
-    short_term_oi_growth = 1.0  # OI must grow by at least 1% on 1m/5m
-    short_term_price_growth = 0.5  # Price must grow by at least 0.5% on 1m/5m
-    short_term_volume_growth = 5.0  # Volume must grow by at least 5% on 1m/5m
-
-    # 1. Long-term decline condition (negative changes in 15m, 1h, and 24h)
-    long_term_downtrend = (
-        oi_changes.get("15m") is not None and oi_changes["15m"] < 0 and
-        oi_changes.get("1h") is not None and oi_changes["1h"] < 0 and
-        oi_changes.get("24h") is not None and oi_changes["24h"] < 0 and
-        price_changes.get("15m") is not None and price_changes["15m"] < 0 and
-        price_changes.get("1h") is not None and price_changes["1h"] < 0 and
-        price_changes.get("24h") is not None and price_changes["24h"] < 0 and
-        volume_changes.get("15m") is not None and volume_changes["15m"] < 0 and
-        volume_changes.get("1h") is not None and volume_changes["1h"] < 0 and
-        volume_changes.get("24h") is not None and volume_changes["24h"] < 0
+    
+    # Conditions for the initial reversal
+    oi_condition = (
+        all(change is not None and change < 0 for change in oi_changes.values())
+        and oi_changes.get("5m") is not None and oi_changes["5m"] > 1.5
+    )
+    
+    price_condition_1 = (
+        all(change is not None and change < 0 for change in price_changes.values())
+        and price_changes.get("5m") is not None and price_changes["5m"] > 1.3
+    )
+    
+    volume_condition = (
+        all(change is not None and change < 0 for change in volume_changes.values())
+        and volume_changes.get("5m") is not None and volume_changes["5m"] > 12
     )
 
-    # 2. Short-term reversal condition (positive changes in 1m and 5m)
-    short_term_reversal = (
-        oi_changes.get("1m") is not None and oi_changes["1m"] > short_term_oi_growth and
-        oi_changes.get("5m") is not None and oi_changes["5m"] > short_term_oi_growth and
-        price_changes.get("1m") is not None and price_changes["1m"] > short_term_price_growth and
-        price_changes.get("5m") is not None and price_changes["5m"] > short_term_price_growth and
-        volume_changes.get("1m") is not None and volume_changes["1m"] > short_term_volume_growth and
-        volume_changes.get("5m") is not None and volume_changes["5m"] > short_term_volume_growth
-    )
-
-    # 3. Signal generation if both conditions are met
-    if long_term_downtrend and short_term_reversal:
-        # Stop Loss (SL) calculation: set to a configurable percentage below current price
+    # Initial reversal signal (step 1)
+    if signal_status[symbol]['step'] == 0 and oi_condition and (price_condition_1 or volume_condition):
         stop_loss = current_price * 0.98  # 2% below the current price
-
-        # Take Profit (TP) calculation: based on a 1:2 reward ratio
         risk = current_price - stop_loss
         take_profit = current_price + (2 * risk)
 
-        # Trading signal message
+        # Send initial reversal signal
         signal_message = (
-            f"NEW REVERSAL LONG SIGNAL generated!\n\n"
+            f"STEP 1: INITIAL REVERSAL SPOTTED!\n\n"
             f"PAIR: {symbol}\n"
-            f"Price: ${current_price:.2f}\n\n"
-            f"Stop Loss: ${stop_loss:.2f}\n\n"
+            f"Price: ${current_price:.2f}\n"
+            f"Stop Loss: ${stop_loss:.2f}\n"
             f"TP1: ${take_profit:.2f}\n"
             f"TP2: ${take_profit * 1.5:.2f}\n"
             f"TP3: ${take_profit * 2:.2f}\n"
-            f"CONFIDENCE: Reversal from negative long-term to positive short-term."
         )
 
+        signal_status[symbol]['step'] = 1  # Move to step 1
+        signal_status[symbol]['last_signal_time'] = time.time()  # Update the time of the last signal
         return signal_message
-    else:
-        logging.info(f"No signal generated for {symbol}. Monitoring OI, price, and volume changes.")
-        return None
+    
+    # Confirm after 5-15 minutes (step 2)
+    elif signal_status[symbol]['step'] == 1:
+        # Check if 5 to 15 minutes have passed
+        time_since_last_signal = time.time() - signal_status[symbol]['last_signal_time']
+        if 5 * 60 <= time_since_last_signal <= 15 * 60:
+            # Conditions for continuing reversal
+            oi_condition_5m = oi_changes.get("5m") is not None and oi_changes["5m"] > 1.5
+            price_condition_5m = price_changes.get("5m") is not None and price_changes["5m"] > 1.3
+            volume_condition_5m = volume_changes.get("5m") is not None and volume_changes["5m"] > 12
+
+            if oi_condition_5m and (price_condition_5m or volume_condition_5m):
+                # Send confirmation signal
+                signal_message = (
+                    f"STEP 2: TREND CONFIRMED AFTER 5-15 MINUTES!\n\n"
+                    f"PAIR: {symbol}\n"
+                    f"Price: ${current_price:.2f}\n"
+                    f"Trend sustains. Consider re-entry or adjusting positions."
+                )
+                signal_status[symbol]['step'] = 2  # Move to step 2
+                signal_status[symbol]['last_signal_time'] = time.time()  # Update time
+                return signal_message
+
+    # Confirm after 1 hour (step 3)
+    elif signal_status[symbol]['step'] == 2:
+        # Check if 1 hour has passed
+        time_since_last_signal = time.time() - signal_status[symbol]['last_signal_time']
+        if time_since_last_signal >= 60 * 60:
+            # Conditions for sustained trend in 1-hour timeframe
+            oi_condition_1h = oi_changes.get("1h") is not None and oi_changes["1h"] > 1.5
+            price_condition_1h = price_changes.get("1h") is not None and price_changes["1h"] > 1.3
+            volume_condition_1h = volume_changes.get("1h") is not None and volume_changes["1h"] > 12
+
+            if oi_condition_1h and (price_condition_1h or volume_condition_1h):
+                # Send final confirmation signal
+                signal_message = (
+                    f"STEP 3: TREND SUSTAINED FOR 1 HOUR!\n\n"
+                    f"PAIR: {symbol}\n"
+                    f"Price: ${current_price:.2f}\n"
+                    f"The reversal has held for 1 hour. Strong trend continuation likely."
+                )
+                signal_status[symbol]['step'] = 3  # Move to step 3 (final step)
+                return signal_message
+    
+    # No signal generated at this point
+    logging.info(f"No signal generated for {symbol}. Monitoring OI, price, and volume changes.")
+    return None
+
 
 
 # Function to monitor pairs and check for signal generation
