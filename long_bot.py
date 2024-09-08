@@ -183,32 +183,44 @@ def generate_signal(symbol, current_price, oi_changes, price_changes, volume_cha
     logging.debug(f"OI Changes for {symbol}: {oi_changes}")
     logging.debug(f"Price Changes for {symbol}: {price_changes}")
     logging.debug(f"Volume Changes for {symbol}: {volume_changes}")
+
+    # Define dynamic thresholds based on volatility or average changes
+    oi_threshold_5m = 2.0  # Threshold for 5m OI change
+    price_threshold_5m = 1.5  # Threshold for 5m price change
+    volume_threshold_5m = 10.0  # Threshold for 5m volume change
     
-    # Conditions for generating the signal
+    # Consider both short and long-term changes for better trend analysis
     oi_condition = (
-        all(change is not None and change < 0 for change in oi_changes.values())
-        and oi_changes.get("5m") is not None and oi_changes["5m"] > 1.5
+        oi_changes.get("5m") is not None and oi_changes["5m"] > oi_threshold_5m and
+        oi_changes.get("15m") is not None and oi_changes["15m"] > 0.5  # Add longer-term confirmation
     )
     
-    price_condition_1 = (
-        all(change is not None and change < 0 for change in price_changes.values())
-        and price_changes.get("5m") is not None and price_changes["5m"] > 1.3
+    price_condition = (
+        price_changes.get("5m") is not None and abs(price_changes["5m"]) > price_threshold_5m and
+        price_changes.get("15m") is not None and abs(price_changes["15m"]) > 0.5  # Confirm with 15m trend
     )
     
     volume_condition = (
-        all(change is not None and change < 0 for change in volume_changes.values())
-        and volume_changes.get("5m") is not None and volume_changes["5m"] > 12
+        volume_changes.get("5m") is not None and abs(volume_changes["5m"]) > volume_threshold_5m and
+        volume_changes.get("15m") is not None and abs(volume_changes["15m"]) > 5.0  # Confirm with 15m volume
     )
     
-    # Generate signal if any of the conditions are met
-    if oi_condition and (price_condition_1 or volume_condition):
+    # Add a confidence metric by checking how many conditions are met
+    confidence = sum([
+        oi_condition,
+        price_condition,
+        volume_condition
+    ])
+
+    # Ensure confidence is high enough to generate a signal
+    if confidence >= 2:
         # Stop Loss (SL) calculation: set to a configurable percentage below current price
         stop_loss = current_price * 0.98  # 2% below the current price
-        
+
         # Take Profit (TP) calculation: based on a 1:2 reward ratio
         risk = current_price - stop_loss
         take_profit = current_price + (2 * risk)
-        
+
         # Trading signal message
         signal_message = (
             f"NEW LONG SIGNAL generated!\n\n"
@@ -216,14 +228,16 @@ def generate_signal(symbol, current_price, oi_changes, price_changes, volume_cha
             f"Price: ${current_price:.2f}\n\n"
             f"Stop Loss: ${stop_loss:.2f}\n\n"
             f"TP1: ${take_profit:.2f}\n"
-            f"TP2: ${take_profit:.2f}\n"
-            f"TP3: ${take_profit:.2f}\n"
+            f"TP2: ${take_profit * 1.5:.2f}\n"
+            f"TP3: ${take_profit * 2:.2f}\n"  # Multiple take profits for a dynamic exit strategy
+            f"Confidence Level: {confidence}/3"
         )
-        
+
         return signal_message
     else:
         logging.info(f"No signal generated for {symbol}. Monitoring OI, price, and volume changes.")
         return None
+
 
 
 # Function to monitor pairs and check for signal generation
