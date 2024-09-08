@@ -13,6 +13,9 @@ logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %
 # WebSocket URL (Example: Binance Futures WebSocket)
 SOCKET = "wss://fstream.binance.com/ws/!ticker@arr"
 
+# Binance API Base URL
+BINANCE_API_BASE = 'https://fapi.binance.com'
+
 # Telegram Bot token from environment variable
 TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 
@@ -38,6 +41,38 @@ logging.info(f"Selected pairs to track: {SELECTED_PAIRS}")
 
 # Variables to store the latest data for selected pairs
 latest_data = {pair: {} for pair in SELECTED_PAIRS}
+
+# Fetch actual funding rate from Binance API
+def fetch_funding_rate(symbol):
+    try:
+        url = f"{BINANCE_API_BASE}/fapi/v1/fundingRate"
+        params = {'symbol': symbol, 'limit': 1}
+        response = requests.get(url, params=params)
+        if response.status_code == 200:
+            data = response.json()
+            return float(data[0]['fundingRate']) * 100  # Convert to percentage
+        else:
+            logging.error(f"Failed to fetch funding rate for {symbol}: {response.text}")
+            return None
+    except Exception as e:
+        logging.error(f"Error fetching funding rate for {symbol}: {e}")
+        return None
+
+# Fetch open interest for different intervals
+def fetch_open_interest(symbol, period='15m'):
+    try:
+        url = f"{BINANCE_API_BASE}/futures/data/openInterestHist"
+        params = {'symbol': symbol, 'period': period, 'limit': 1}
+        response = requests.get(url, params=params)
+        if response.status_code == 200:
+            data = response.json()
+            return data[0]['sumOpenInterest']
+        else:
+            logging.error(f"Failed to fetch open interest for {symbol}: {response.text}")
+            return None
+    except Exception as e:
+        logging.error(f"Error fetching open interest for {symbol}: {e}")
+        return None
 
 # Function to send a message to Telegram
 def send_telegram_message(message):
@@ -125,11 +160,11 @@ def on_message(ws, message):
                     'price_change_1h': ticker.get('P'),
                     'price_change_24h': ticker.get('P'),
                     'volume_change_24h': ticker.get('q'),  # Example field for volume
-                    'funding_rate': "0.0029",  # Placeholder, fetch actual funding rate
-                    'oi_5m': "+2.43%",  # Placeholder
-                    'oi_15m': "+31.02%",  # Placeholder
-                    'oi_1h': "+62.51%",  # Placeholder
-                    'oi_24h': "+60.38%",  # Placeholder
+                    'funding_rate': fetch_funding_rate(symbol),  # Fetch actual funding rate
+                    'oi_5m': fetch_open_interest(symbol, '5m'),  # Fetch open interest for 5m interval
+                    'oi_15m': fetch_open_interest(symbol, '15m'),  # Fetch open interest for 15m interval
+                    'oi_1h': fetch_open_interest(symbol, '1h'),  # Fetch open interest for 1h interval
+                    'oi_24h': fetch_open_interest(symbol, '1d'),  # Fetch open interest for 24h interval
                     'daily_low': ticker.get('c'),  # Placeholder, fetch actual low
                     'weekly_low': ticker.get('c')  # Placeholder, fetch actual low
                 }
